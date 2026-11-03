@@ -1,0 +1,14 @@
+2026-11-03T12:00:01.0000000Z ##[group]Run npm ci
+2026-11-03T12:00:01.1000000Z npm WARN deprecated @types/graphql-upload@8.0.12: This package is deprecated
+2026-11-03T12:00:03.4500000Z npm ERR! code E404
+2026-11-03T12:00:03.4510000Z npm ERR! 404 Not Found - GET https://registry.npmjs.org/@acme/shared-telemetry/-/shared-telemetry-3.0.2.tgz - Not found
+2026-11-03T12:00:03.4520000Z npm ERR! 404 
+2026-11-03T12:00:03.4530000Z npm ERR! 404  '@acme/shared-telemetry@3.0.2' is not in this registry.
+2026-11-03T12:00:03.4540000Z npm ERR! 404 
+2026-11-03T12:00:03.4550000Z npm ERR! 404 Note that you can also install from a
+2026-11-03T12:00:03.4560000Z npm ERR! 404 tarball, folder, http url, or git url.
+2026-11-03T12:00:03.4570000Z 
+2026-11-03T12:00:03.4580000Z npm ERR! A complete log of this run can be found in:
+2026-11-03T12:00:03.4590000Z npm ERR!     /home/runner/.npm/_logs/2026-11-03T12_00_03_450Z-debug-0.log
+2026-11-03T12:00:03.4600000Z ##[error]Process completed with exit code 1.
+

@@ -1,0 +1,30 @@
+name: Notify n8n on Pipeline Failure
+
+on:
+  workflow_run:
+    workflows: ["Sample Application CI Pipeline"]
+    types: [completed]
+
+jobs:
+  notify-n8n:
+    name: Trigger Failure Analysis
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    steps:
+      - name: Send Webhook to n8n Failure Analyzer
+        env:
+          N8N_WEBHOOK_URL: ${{ secrets.N8N_FAILURE_WEBHOOK_URL }}
+        run: |
+          if [ -z "$N8N_WEBHOOK_URL" ]; then
+            echo "N8N_WEBHOOK_URL secret not set. Skipping notification."
+            exit 0
+          fi
+          
+          curl -X POST "$N8N_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-GitHub-Event: workflow_run" \
+            -d '{
+              "action": "completed",
+              "workflow_run": ${{ toJson(github.event.workflow_run) }},
+              "repository": ${{ toJson(github.event.repository) }}
+            }'

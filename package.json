@@ -1,0 +1,25 @@
+{
+  "name": "ci-failure-analyzer",
+  "version": "1.0.0",
+  "description": "DevOps automated CI failure analyzer and flaky test auto-retrier with n8n and GitHub Actions",
+  "scripts": {
+    "test": "node scripts/test-classifier.js",
+    "simulate": "node scripts/simulate-webhook.js --type flaky-test --dry-run",
+    "simulate:flaky": "node scripts/simulate-webhook.js --type flaky-test",
+    "simulate:bug": "node scripts/simulate-webhook.js --type code-bug",
+    "simulate:dep": "node scripts/simulate-webhook.js --type dependency-error",
+    "simulate:infra": "node scripts/simulate-webhook.js --type infra-failure",
+    "dora": "node scripts/dora-metrics.js"
+  },
+  "keywords": [
+    "devops",
+    "ci-cd",
+    "github-actions",
+    "n8n",
+    "flaky-tests",
+    "dora-metrics",
+    "failure-analyzer"
+  ],
+  "author": "DevOps Engineering",
+  "license": "MIT"
+}

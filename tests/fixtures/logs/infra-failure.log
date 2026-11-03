@@ -1,0 +1,14 @@
+2026-11-03T14:30:00.0000000Z ##[group]Run docker build -t payment-service:latest .
+2026-11-03T14:30:01.0000000Z #1 [internal] load build definition from Dockerfile
+2026-11-03T14:30:01.2000000Z #1 transferring dockerfile: 452B done
+2026-11-03T14:30:01.3000000Z #2 [internal] load .dockerignore
+2026-11-03T14:30:01.4000000Z #2 transferring context: 82B done
+2026-11-03T14:30:01.5000000Z #3 [1/5] FROM docker.io/library/node:20-alpine
+2026-11-03T14:30:05.0000000Z #4 [2/5] WORKDIR /app
+2026-11-03T14:30:06.0000000Z #5 [3/5] COPY package*.json ./
+2026-11-03T14:30:07.0000000Z #6 [4/5] RUN npm ci --omit=dev
+2026-11-03T14:30:25.0000000Z #7 [5/5] COPY . .
+2026-11-03T14:30:30.0000000Z failed to copy files: write /var/lib/docker/overlay2/abc123xyz/diff/app/dist: no space left on device
+2026-11-03T14:30:30.1000000Z ERROR: failed to solve: failed to copy files: write /var/lib/docker/overlay2/abc123xyz/diff/app/dist: no space left on device
+2026-11-03T14:30:30.1500000Z ##[error]Process completed with exit code 137.
+

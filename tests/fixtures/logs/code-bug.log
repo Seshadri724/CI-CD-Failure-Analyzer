@@ -1,0 +1,29 @@
+2026-11-03T11:00:01.0000000Z ##[group]Run npm run test:unit
+2026-11-03T11:00:01.1000000Z > payment-service@2.4.0 test:unit
+2026-11-03T11:00:01.2000000Z > vitest run
+2026-11-03T11:00:02.0000000Z 
+2026-11-03T11:00:03.1000000Z  ✓ src/utils/formatCurrency.spec.ts (4 tests) 12ms
+2026-11-03T11:00:03.2000000Z  ❯ src/services/discountCalculator.spec.ts (3 tests | 1 failed) 38ms
+2026-11-03T11:00:03.2100000Z    × should apply 20% discount code VIP20 to total
+2026-11-03T11:00:03.2110000Z 
+2026-11-03T11:00:03.2120000Z  ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+2026-11-03T11:00:03.2130000Z 
+2026-11-03T11:00:03.2140000Z  FAIL  src/services/discountCalculator.spec.ts > DiscountCalculator > should apply 20% discount code VIP20 to total
+2026-11-03T11:00:03.2150000Z AssertionError: expected 80 to deeply equal 75
+2026-11-03T11:00:03.2160000Z 
+2026-11-03T11:00:03.2170000Z - Expected:
+2026-11-03T11:00:03.2180000Z 75
+2026-11-03T11:00:03.2190000Z + Received:
+2026-11-03T11:00:03.2200000Z 80
+2026-11-03T11:00:03.2210000Z 
+2026-11-03T11:00:03.2220000Z  ❯ src/services/discountCalculator.spec.ts:48:29
+2026-11-03T11:00:03.2230000Z      46|     const cartTotal = 100;
+2026-11-03T11:00:03.2240000Z      47|     const result = calculateDiscount(cartTotal, 'VIP20');
+2026-11-03T11:00:03.2250000Z      48|     expect(result.finalAmount).toEqual(75);
+2026-11-03T11:00:03.2260000Z        |                             ^
+2026-11-03T11:00:03.2270000Z      49|   });
+2026-11-03T11:00:03.2280000Z 
+2026-11-03T11:00:03.2500000Z Test Files  1 failed | 1 passed (2)
+2026-11-03T11:00:03.2510000Z      Tests  1 failed | 6 passed (7)
+2026-11-03T11:00:03.2520000Z ##[error]Process completed with exit code 1.
+

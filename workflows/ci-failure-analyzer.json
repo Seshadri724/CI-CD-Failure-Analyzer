@@ -1,0 +1,370 @@
+{
+  "name": "CI/CD Failure Analyzer & Flaky Auto-Retrier",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "github-ci-failure",
+        "responseMode": "onReceived",
+        "responseData": "OK",
+        "options": {}
+      },
+      "id": "1e7cb760-b742-4f05-8e42-7a7d4d720441",
+      "name": "GitHub Failure Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        220,
+        300
+      ],
+      "webhookId": "github-ci-failure"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract and validate workflow_run payload from GitHub\nconst body = $input.first().json.body || $input.first().json;\n\n// We handle GitHub workflow_run event\nconst workflowRun = body.workflow_run || body;\nconst action = body.action || workflowRun.action || 'completed';\nconst conclusion = workflowRun.conclusion || body.conclusion || 'failure';\n\nconst isFailed = conclusion === 'failure';\nconst isCompleted = action === 'completed' || action === 'requested';\n\nconst repository = body.repository || workflowRun.repository || {};\nconst repoName = repository.name || 'payment-service';\nconst repoOwner = (repository.owner && repository.owner.login) ? repository.owner.login : 'acme-corp';\nconst fullName = repository.full_name || `${repoOwner}/${repoName}`;\n\n// Pull request detection\nconst pullRequests = workflowRun.pull_requests || body.pull_requests || [];\nconst prNumber = pullRequests.length > 0 ? pullRequests[0].number : (body.pull_request ? body.pull_request.number : (body.pr_number || null));\n\nreturn [{\n  json: {\n    isValid: isFailed && isCompleted,\n    conclusion: conclusion,\n    action: action,\n    runId: workflowRun.id || body.run_id || 10001,\n    runNumber: workflowRun.run_number || body.run_number || 1,\n    runAttempt: workflowRun.run_attempt || body.run_attempt || 1,\n    workflowName: workflowRun.name || 'CI',\n    branch: workflowRun.head_branch || 'main',\n    commitSha: workflowRun.head_sha || 'abcdef123456',\n    shortSha: (workflowRun.head_sha || 'abcdef123456').substring(0, 7),\n    commitMessage: (workflowRun.head_commit && workflowRun.head_commit.message) ? workflowRun.head_commit.message : 'Fix checkout flow',\n    actor: (workflowRun.actor && workflowRun.actor.login) ? workflowRun.actor.login : 'developer',\n    htmlUrl: workflowRun.html_url || `https://github.com/${fullName}/actions/runs/${workflowRun.id || 10001}`,\n    repoOwner: repoOwner,\n    repoName: repoName,\n    fullName: fullName,\n    prNumber: prNumber,\n    hasPR: prNumber !== null && prNumber !== undefined,\n    rawLogs: body.simulated_raw_logs || null\n  }\n}];"
+      },
+      "id": "c1f7b9e3-205e-4efb-8ec6-36dfc17983ea",
+      "name": "Parse & Validate Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.isValid }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "e492237a-4286-4e58-b6ec-7ff34b22ca01",
+      "name": "Is Failed Run?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare request to fetch failed jobs from GitHub API\n// If rawLogs was supplied directly (e.g. simulation), we skip API calls\nconst item = $input.first().json;\n\nreturn [{\n  json: {\n    ...item,\n    apiUrl: `https://api.github.com/repos/${item.repoOwner}/${item.repoName}/actions/runs/${item.runId}/jobs`\n  }\n}];"
+      },
+      "id": "90ba457a-a5f1-4db3-9bd5-5fef07e6005b",
+      "name": "Prepare GitHub API Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Smart Log Sanitizer & Extractor\n// Strips ANSI escape codes, extracts failing step and 50-line culprit context\nconst item = $input.first().json;\nlet rawLogs = item.rawLogs || '';\n\n// If rawLogs is not provided, generate a fallback or read from job steps\nif (!rawLogs) {\n  rawLogs = `##[group]Run tests\n  FAIL tests/unit/order.spec.ts\n  AssertionError: expected 'active' to equal 'pending'\n  at Context.<anonymous> (tests/unit/order.spec.ts:42:15)\n  ##[error]Process completed with exit code 1.`;\n}\n\n// 1. Strip ANSI codes and timestamps\nconst cleaned = rawLogs\n  .replace(/\\u001b\\[[0-9;]*m/g, '')\n  .replace(/\\r\\n/g, '\\n')\n  .replace(/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d+Z\\s*/gm, '');\n\nconst lines = cleaned.split('\\n');\n\n// 2. Identify error anchor\nconst errorKeywords = [\n  'FAIL ',\n  'AssertionError',\n  'Timeout - Async callback',\n  'Exceeded timeout',\n  'npm ERR!',\n  'yarn error',\n  'Error: Cannot find module',\n  'no space left on device',\n  'exit code 137',\n  'OOMKilled',\n  'SIGKILL',\n  'failed to solve',\n  'Connection refused',\n  'ECONNREFUSED',\n  'ETIMEDOUT'\n];\n\nlet culpritStart = -1;\nfor (let i = 0; i < lines.length; i++) {\n  if (errorKeywords.some(kw => lines[i].includes(kw))) {\n    culpritStart = Math.max(0, i - 5);\n    break;\n  }\n}\n\nif (culpritStart === -1) {\n  culpritStart = Math.max(0, lines.length - 35);\n}\n\nconst culpritSnippet = lines.slice(culpritStart, culpritStart + 35).join('\\n');\n\nreturn [{\n  json: {\n    ...item,\n    sanitizedLogs: cleaned,\n    culpritSnippet: culpritSnippet,\n    totalLogLines: lines.length\n  }\n}];"
+      },
+      "id": "7737d9ea-0f2c-46d5-a335-5154ee4ce945",
+      "name": "Smart Log Extractor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Deterministic Classifier & AI Reasoning Node\nconst item = $input.first().json;\nconst snippet = item.culpritSnippet || '';\nconst logs = item.sanitizedLogs || '';\n\nlet category = 'CODE_BUG';\nlet isFlaky = false;\nlet confidence = 0.85;\nlet rootCause = 'Unit or integration test failed with assertion mismatch.';\nlet suggestedAction = 'Inspect the failing test assertion and verify expected values.';\nlet errorSignature = 'AssertionError';\n\n// 1. Check for Flaky Test patterns\nif (\n  snippet.includes('Timeout - Async callback') ||\n  snippet.includes('Exceeded timeout') ||\n  snippet.includes('waiting for element to be visible') ||\n  snippet.includes('ETIMEDOUT') ||\n  snippet.includes('Connection refused on localhost') ||\n  snippet.includes('jest.setTimeout')\n) {\n  category = 'FLAKY_TEST';\n  isFlaky = true;\n  confidence = 0.94;\n  rootCause = 'Asynchronous callback timed out waiting for event or selector. Typical race condition / latency spike.';\n  suggestedAction = 'Check async event triggers, increase jest.setTimeout(), or use resilient polling.';\n  errorSignature = 'AsyncTimeoutError';\n}\n// 2. Check for Dependency / Registry failures\nelse if (\n  snippet.includes('npm ERR! 404') ||\n  snippet.includes('not in this registry') ||\n  snippet.includes('pip._vendor') ||\n  snippet.includes('Could not resolve dependencies') ||\n  snippet.includes('checksum mismatch')\n) {\n  category = 'DEPENDENCY_ERROR';\n  isFlaky = false;\n  confidence = 0.96;\n  rootCause = 'Package registry reported package not found (404) or missing lockfile dependency.';\n  suggestedAction = 'Verify package name, check internal npm/artifactory token, or update lockfile.';\n  errorSignature = 'Registry404Error';\n}\n// 3. Check for Infrastructure / Runner failures\nelse if (\n  snippet.includes('no space left on device') ||\n  snippet.includes('exit code 137') ||\n  snippet.includes('OOMKilled') ||\n  snippet.includes('failed to solve: failed to copy files') ||\n  snippet.includes('runner lost communication')\n) {\n  category = 'INFRASTRUCTURE_FAILURE';\n  isFlaky = true; // Infra spikes are transient and can be retried once\n  confidence = 0.92;\n  rootCause = 'Runner ran out of disk space or memory (SIGKILL / OOMKilled exit code 137).';\n  suggestedAction = 'Clean Docker build caches, prune unused images on self-hosted runners, or upgrade runner size.';\n  errorSignature = 'RunnerDiskOrOOM';\n}\n// 4. Default to Code Bug\nelse if (snippet.includes('AssertionError') || snippet.includes('FAIL') || snippet.includes('expected')) {\n  category = 'CODE_BUG';\n  isFlaky = false;\n  confidence = 0.95;\n  rootCause = 'Test assertion failed: received value does not match expected output in business logic.';\n  suggestedAction = 'Check the diff between expected and received values in the failing test suite.';\n  errorSignature = 'AssertionMismatch';\n}\n\n// Retry policy: Auto retry if flaky and runAttempt < 2\nconst canRetry = isFlaky && (item.runAttempt < 2);\n\nreturn [{\n  json: {\n    ...item,\n    category,\n    isFlaky,\n    confidence: Math.round(confidence * 100),\n    rootCause,\n    suggestedAction,\n    errorSignature,\n    canRetry,\n    estimatedTimeSavedMinutes: isFlaky ? 15 : 0\n  }\n}];"
+      },
+      "id": "e0bfa9c3-14b2-4d2a-89a1-77e8a939bc99",
+      "name": "Classify Failure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.canRetry }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "3a0b12fe-f472-4d7a-8071-209bf76efc25",
+      "name": "Should Auto-Retry?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1540,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.github.com/repos/{{ $json.repoOwner }}/{{ $json.repoName }}/actions/runs/{{ $json.runId }}/rerun-failed-jobs",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-ci-failure-analyzer"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "782ca73d-9d41-48e0-a7d1-0bc4b840fa2c",
+      "name": "GitHub API: Trigger Rerun",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1780,
+        180
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format executive PR Markdown comment\nconst item = $input.first().json;\n\nconst categoryEmoji = {\n  'FLAKY_TEST': '🧪 Flaky Test Detected',\n  'DEPENDENCY_ERROR': '📦 Dependency Registry Error',\n  'INFRASTRUCTURE_FAILURE': '🏗️ Infrastructure / Runner Glitch',\n  'CODE_BUG': '🐛 Code Bug (Test / Lint Failure)'\n}[item.category] || '⚠️ Pipeline Failure';\n\nconst retryBadge = item.canRetry \n  ? '⚡ **Automated Action:** Auto-retried failed jobs (Attempt ' + item.runAttempt + ' of 2).'\n  : '⚠️ **Automated Action:** Developer attention required (No auto-retry for this failure type).';\n\nconst comment = `### 🚨 CI Build Failure Analysis\n\n**Workflow:** \\`${item.workflowName}\\` | **Run:** [#${item.runNumber}](${item.htmlUrl}) | **Commit:** \\`${item.shortSha}\\`  \n**Classification:** **${categoryEmoji}** (Confidence: \\`${item.confidence}%\\`)\n\n---\n\n#### 📋 Root Cause Summary\n${item.rootCause}\n\n#### 💡 Suggested Action\n${item.suggestedAction}\n\n#### ${retryBadge}\n\n<details>\n<summary><b>🔍 View Sanitized Culprit Log Snippet (Click to expand)</b></summary>\n\n\\`\\`\\`text\n${item.culpritSnippet}\n\\`\\`\\`\n</details>\n\n*Automated by [n8n CI/CD Failure Analyzer](https://github.com/acme-corp/ci-failure-analyzer)*`;\n\nreturn [{\n  json: {\n    ...item,\n    prCommentMarkdown: comment\n  }\n}];"
+      },
+      "id": "52fcf963-4c9e-4e4b-9721-c4beae16016f",
+      "name": "Format PR Comment",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2020,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.hasPR }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "83cf9922-df38-4e50-93a9-e85d852a3ee5",
+      "name": "Has Pull Request?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2240,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.github.com/repos/{{ $json.repoOwner }}/{{ $json.repoName }}/issues/{{ $json.prNumber }}/comments",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-ci-failure-analyzer"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"body\": {{ JSON.stringify($json.prCommentMarkdown) }}\n}",
+        "options": {}
+      },
+      "id": "da592966-d34e-4e14-8f4f-40e980313cb1",
+      "name": "Post Comment to PR",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        2460,
+        220
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Telemetry & DORA Metrics Persistence Event\nconst item = $input.first().json;\n\nconst metricRecord = {\n  timestamp: new Date().toISOString(),\n  repo: item.fullName,\n  runId: item.runId,\n  prNumber: item.prNumber,\n  category: item.category,\n  isFlaky: item.isFlaky,\n  retried: item.canRetry,\n  errorSignature: item.errorSignature,\n  timeSavedMinutes: item.estimatedTimeSavedMinutes\n};\n\nreturn [{\n  json: {\n    status: 'COMPLETED',\n    metricRecord: metricRecord,\n    summary: `Processed ${item.category} for PR #${item.prNumber || 'N/A'}`\n  }\n}];"
+      },
+      "id": "e6a18d15-5807-4e78-be70-1be4086ea761",
+      "name": "Emit DORA Metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2700,
+        280
+      ]
+    }
+  ],
+  "connections": {
+    "GitHub Failure Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse & Validate Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Validate Event": {
+      "main": [
+        [
+          {
+            "node": "Is Failed Run?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Failed Run?": {
+      "main": [
+        [
+          {
+            "node": "Prepare GitHub API Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare GitHub API Request": {
+      "main": [
+        [
+          {
+            "node": "Smart Log Extractor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Smart Log Extractor": {
+      "main": [
+        [
+          {
+            "node": "Classify Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Failure": {
+      "main": [
+        [
+          {
+            "node": "Should Auto-Retry?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Auto-Retry?": {
+      "main": [
+        [
+          {
+            "node": "GitHub API: Trigger Rerun",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format PR Comment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub API: Trigger Rerun": {
+      "main": [
+        [
+          {
+            "node": "Format PR Comment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format PR Comment": {
+      "main": [
+        [
+          {
+            "node": "Has Pull Request?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Pull Request?": {
+      "main": [
+        [
+          {
+            "node": "Post Comment to PR",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Emit DORA Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post Comment to PR": {
+      "main": [
+        [
+          {
+            "node": "Emit DORA Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

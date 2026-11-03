@@ -1,0 +1,64 @@
+name: Sample Application CI Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      simulate_failure_type:
+        description: 'Simulate specific failure mode'
+        required: false
+        default: 'none'
+        type: choice
+        options:
+          - none
+          - flaky-test
+          - code-bug
+          - dependency-error
+          - infra-failure
+
+jobs:
+  lint-and-typecheck:
+    name: Code Quality Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run lint
+        run: echo "Lint and typechecks passed."
+
+  test-suite:
+    name: Test Execution
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run test suite
+        run: |
+          SIM_TYPE="${{ github.event.inputs.simulate_failure_type }}"
+          if [ "$SIM_TYPE" = "flaky-test" ]; then
+            echo "FAIL tests/e2e/checkout-webhook.spec.ts"
+            echo "Timeout - Async callback was not invoked within the 10000 ms timeout specified by jest.setTimeout."
+            exit 1
+          elif [ "$SIM_TYPE" = "code-bug" ]; then
+            echo "FAIL src/services/discountCalculator.spec.ts"
+            echo "AssertionError: expected 80 to deeply equal 75"
+            exit 1
+          elif [ "$SIM_TYPE" = "dependency-error" ]; then
+            echo "npm ERR! 404 Not Found - GET https://registry.npmjs.org/@acme/shared-telemetry"
+            exit 1
+          elif [ "$SIM_TYPE" = "infra-failure" ]; then
+            echo "failed to copy files: write /var/lib/docker: no space left on device"
+            exit 137
+          else
+            echo "All automated tests passed successfully."
+          fi

@@ -1,0 +1,40 @@
+2026-11-03T10:15:00.1234567Z ##[group]Run actions/checkout@v4
+2026-11-03T10:15:00.1245678Z Syncing repository: acme-corp/payment-service
+2026-11-03T10:15:01.3456789Z Getting list of local refs...
+2026-11-03T10:15:01.5678901Z ##[endgroup]
+2026-11-03T10:15:02.0000000Z ##[group]Run actions/setup-node@v4
+2026-11-03T10:15:02.1000000Z Found in cache @ /opt/hostedtoolcache/node/20.11.0/x64
+2026-11-03T10:15:02.2000000Z ##[endgroup]
+2026-11-03T10:15:03.0000000Z ##[group]Run npm ci
+2026-11-03T10:15:08.5000000Z added 842 packages in 5.2s
+2026-11-03T10:15:08.6000000Z ##[endgroup]
+2026-11-03T10:15:09.0000000Z ##[group]Run npm run test:e2e
+2026-11-03T10:15:09.1000000Z > payment-service@2.4.0 test:e2e
+2026-11-03T10:15:09.1000000Z > jest --config jest.e2e.config.js --runInBand
+2026-11-03T10:15:10.0000000Z 
+2026-11-03T10:15:12.0000000Z  PASS  tests/e2e/health.spec.ts (1.82s)
+2026-11-03T10:15:15.0000000Z  PASS  tests/e2e/auth-flow.spec.ts (2.95s)
+2026-11-03T10:15:20.5000000Z  FAIL  tests/e2e/checkout-webhook.spec.ts (15.22s)
+2026-11-03T10:15:20.5100000Z   ● Checkout Webhook Flow › should receive asynchronous charge.succeeded event
+2026-11-03T10:15:20.5110000Z 
+2026-11-03T10:15:20.5120000Z     Timeout - Async callback was not invoked within the 10000 ms timeout specified by jest.setTimeout.
+2026-11-03T10:15:20.5130000Z 
+2026-11-03T10:15:20.5140000Z       38 |   it('should receive asynchronous charge.succeeded event', async () => {
+2026-11-03T10:15:20.5150000Z       39 |     const eventPromise = waitForWebhookEvent('charge.succeeded', { timeout: 10000 });
+2026-11-03T10:15:20.5160000Z     > 40 |     await triggerSimulatedStripeCharge({ orderId: 'ord_9981' });
+2026-11-03T10:15:20.5170000Z          |     ^
+2026-11-03T10:15:20.5180000Z       41 |     const received = await eventPromise;
+2026-11-03T10:15:20.5190000Z       42 |     expect(received.status).toBe('paid');
+2026-11-03T10:15:20.5200000Z 
+2026-11-03T10:15:20.5210000Z       at Timeout.callback [as _onTimeout] (node_modules/jest-circus/build/utils.js:401:12)
+2026-11-03T10:15:20.5220000Z       at listOnTimeout (node:internal/timers:573:17)
+2026-11-03T10:15:20.5230000Z       at processTimers (node:internal/timers:514:7)
+2026-11-03T10:15:20.5240000Z 
+2026-11-03T10:15:20.5250000Z Test Suites: 1 failed, 2 passed, 3 total
+2026-11-03T10:15:20.5260000Z Tests:       1 failed, 14 passed, 15 total
+2026-11-03T10:15:20.5270000Z Snapshots:   0 total
+2026-11-03T10:15:20.5280000Z Time:        21.432 s
+2026-11-03T10:15:20.5290000Z Ran all test suites.
+2026-11-03T10:15:20.5300000Z ##[error]Process completed with exit code 1.
+2026-11-03T10:15:20.5310000Z ##[endgroup]
+
