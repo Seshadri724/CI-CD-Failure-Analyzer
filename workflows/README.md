@@ -96,3 +96,4 @@ This directory contains the importable workflow JSON: [`ci-failure-analyzer.json
 5. Select [`workflows/ci-failure-analyzer.json`](./ci-failure-analyzer.json).
 6. Configure the `GITHUB_TOKEN` environment variable or add a GitHub credential in n8n.
 7. Toggle the workflow to **Active**.
+

@@ -62,3 +62,4 @@ jobs:
           else
             echo "All automated tests passed successfully."
           fi
+

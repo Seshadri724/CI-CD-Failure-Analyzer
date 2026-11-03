@@ -28,3 +28,4 @@ jobs:
               "workflow_run": ${{ toJson(github.event.workflow_run) }},
               "repository": ${{ toJson(github.event.repository) }}
             }'
+

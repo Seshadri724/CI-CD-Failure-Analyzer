@@ -44,3 +44,4 @@ Thumbs.db
 # Transient runtime logs (keep test fixtures intact)
 logs/*.log
 !tests/fixtures/logs/*.log
+
